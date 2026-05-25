@@ -87,8 +87,13 @@ def parse_item(li: Tag) -> dict[str, Any]:
         if isinstance(src, str) and src:
             thumbnail = src
 
+    # 記事 URL であることを検証 (非記事リンクは ValueError で弾く)
+    extract_article_id(href_raw)
     item: dict[str, Any] = {
-        "unique_id": extract_article_id(href_raw),
+        # feedgenerator は unique_id をそのまま Atom の <id> に出す。多くのリーダーが
+        # <id> をパーマリンクとして扱うため、絶対 URL (= link) を入れる。bare な
+        # 記事 ID だとフィード URL に相対解決され 404 リンクになる
+        "unique_id": href_raw,
         "title": title,
         "link": href_raw,
         "description": "",

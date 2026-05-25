@@ -94,7 +94,8 @@ def test_parse_item_extracts_all_fields() -> None:
         """
     )
     item = main.parse_item(li)
-    assert item["unique_id"] == "123"
+    # <id> はリーダーがパーマリンクに使うため絶対 URL (= link) を入れる
+    assert item["unique_id"] == "https://www.saitama-np.co.jp/articles/123"
     assert item["title"] == "タイトル"
     assert item["link"] == "https://www.saitama-np.co.jp/articles/123"
     assert item["pubdate"] == datetime.datetime(2026, 5, 13, 15, 0, tzinfo=datetime.UTC)
@@ -166,7 +167,7 @@ def test_parse_item_raises_on_missing_date() -> None:
 
 def test_parse_items_ignores_sp_only_duplicates() -> None:
     items = main.parse_items(SAMPLE_LIST_HTML)
-    ids = [it["unique_id"] for it in items]
+    ids = [main.extract_article_id(it["unique_id"]) for it in items]
     # pc-only セットの 2 件のみ。sp-only 側はセレクタで除外
     assert ids == ["196026", "195384"]
 
@@ -184,7 +185,7 @@ def test_parse_items_silently_drops_ad_li(capsys: pytest.CaptureFixture[str]) ->
     </ul></div>
     """
     items = main.parse_items(ad_html)
-    assert [it["unique_id"] for it in items] == ["1", "2"]
+    assert [main.extract_article_id(it["unique_id"]) for it in items] == ["1", "2"]
     assert "[ERROR]" not in capsys.readouterr().out
 
 
@@ -197,7 +198,7 @@ def test_parse_items_skips_broken_entries(capsys: pytest.CaptureFixture[str]) ->
     </ul></div>
     """
     items = main.parse_items(broken_html)
-    assert [it["unique_id"] for it in items] == ["1"]
+    assert [main.extract_article_id(it["unique_id"]) for it in items] == ["1"]
     assert "skipping list item" in capsys.readouterr().out
 
 
@@ -211,6 +212,10 @@ def test_build_feed_emits_media_thumbnail_and_namespace() -> None:
     assert '<media:thumbnail url="https://www.saitama-np.co.jp/upload/images/A.jpg"' in xml
     assert "記事タイトル A" in xml
     assert "記事タイトル B" in xml
+    # <id> は絶対 IRI。bare な記事 ID だとリーダーがフィード URL に相対解決して
+    # 404 のパーマリンクになる
+    assert "<id>https://www.saitama-np.co.jp/articles/196026</id>" in xml
+    assert "<id>196026</id>" not in xml
 
 
 def test_fetch_html_passes_user_agent_and_timeout() -> None:
