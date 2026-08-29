@@ -106,6 +106,8 @@ lint / format / mypy / pytest は **`ci.yaml` が PR と `main` push で回す**
 
 auto-merge はリポジトリ設定に依存する: `allow_auto_merge: true` と、`main` の branch protection で **required status check `check`**（= `ci.yaml` のジョブ名）が必要。これが無いと `gh pr merge --auto` が失敗し、フォールバックの素マージが ci 完了前に走ってしまう。
 
+**auto-merge のマージコミットは `gh-pages` / `ci` を起動しない**。`GITHUB_TOKEN` による push は GitHub がワークフローを再帰起動しない仕様のため。つまり Dependabot がマージされてもフィードは再ビルドされず、次の日次 cron まで古いままになる（フィード内容は依存更新で変わらないので実害はない）。マージ直後にランナー上で確認したいときは `gh workflow run gh-pages.yaml --ref main` を使う。
+
 ## コミット慣例
 
 `fix:` / `ci:` / `feat:` を日本語本文と併用（姉妹プロジェクトと統一）。
