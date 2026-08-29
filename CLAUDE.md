@@ -15,11 +15,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `pyproject.toml` — Python 3.13、本体依存 `requests` / `feedgenerator` / `beautifulsoup4` / `lxml`。dev 依存に `ruff` / `mypy` / `pytest` / `pytest-cov` / `pre-commit` / `types-requests` / `types-beautifulsoup4`
 - `.python-version`
 - `.gitignore`（`/dist/` を ignore。`uv.lock` は **commit する**）
-- `.pre-commit-config.yaml`（pre-commit-hooks + ruff + ruff-format + mypy）
+- `.pre-commit-config.yaml`（pre-commit-hooks + `repo: local` の ruff / ruff-format / mypy。詳細は「pre-commit」節）
 - `main.py`（実装は下記）
 - `tests/test_main.py`（pytest。カバレッジ閾値 80%）
-- `.github/workflows/gh-pages.yaml`（push + 毎日 00:00 UTC cron でビルド & Pages デプロイ。**唯一のワークフロー**）
-- `.github/dependabot.yml`（`github-actions` と `uv` を weekly、`commit-message.prefix: "ci"`）
+- `.github/workflows/gh-pages.yaml`（push + 毎日 00:00 UTC cron でビルド & Pages デプロイ）
+- `.github/workflows/ci.yaml`（PR と `main` への push で ruff / format / mypy / pytest。ジョブ名 `check`）
+- `.github/workflows/dependabot-auto-merge.yaml`（Dependabot の non-major 更新を auto-merge）
+- `.github/dependabot.yml`（`github-actions` / `uv` / `pre-commit` を weekly、`commit-message.prefix: "ci"`、いずれもグループ化）
 
 `templates/` も `feeds/index.html` も **使わない**（単一フィードなので URL は `main.py` に直書き、出力は `feed.xml` 一本）。
 
@@ -49,7 +51,8 @@ GET `https://www.saitama-np.co.jp/categorys/news-original/topic/saitama` がそ�
 1. `fetch_html()`: `requests.get(SOURCE_URL, headers=REQUEST_HEADERS, timeout=TIMEOUT)` → `raise_for_status` → `apparent_encoding` で文字化け回避してから `response.text` を返す
 2. `parse_items(html)`: `BeautifulSoup(html, "lxml")` で `LIST_SELECTOR` を回し、各 `<li>` を `parse_item` に渡す。失敗したアイテムは `print("[ERROR] skipping ...")` でログだけ吐いて continue（1 件壊れても全体を落とさない）
 3. `parse_item(li)` で title / link / pubdate / media_thumbnail を抽出
-4. `build_feed(items)` → `AtomFeedWithMedia` に詰めて `dist/feed.xml` に書き出し
+4. `main()` は `items` が **0 件なら `RuntimeError` で落とす**（空フィードで既存 `feed.xml` を上書きしないため。書き込み前に判定する）
+5. `build_feed(items)` → `AtomFeedWithMedia` に詰めて `dist/feed.xml` に書き出し
 
 サムネイル画像は **`<media:thumbnail>`**（Media RSS, `xmlns:media="http://search.yahoo.com/mrss/"`）として出す。`feedgenerator.Atom1Feed` を継承した `AtomFeedWithMedia` で `root_attributes` に namespace を増やし、`add_item_elements` で `media:thumbnail` を吐く。アイテム側は `add_item(media_thumbnail=URL, ...)` で渡す（`saitama-culture` と同じ実装）。
 
@@ -71,15 +74,23 @@ uv run pytest               # テスト + カバレッジ (cov-fail-under=80)
 uv run pre-commit run --all-files
 ```
 
-**CI ワークフローは置いていない**（`gh-pages.yaml` 単独）。lint / format / mypy / pytest は `pre-commit` のローカル実行で担保する方針。動作確認は `dist/feed.xml` がパースできること（例: `xmllint --noout dist/feed.xml`）と、`gh-pages.yaml` のビルドが通っていることで見る。
+lint / format / mypy / pytest は **`ci.yaml` が PR と `main` push で回す**（ローカルは `pre-commit` が同じものを走らせる）。`ci.yaml` は外部サイトへの実アクセスを含まない（`uv run main.py` は回さない）ので、PR が埼玉新聞側の可用性に依存しない。実フェッチの検証は `main` への push と日次 cron が担う。
+
+手元での動作確認は `dist/feed.xml` がパースできること（例: `xmllint --noout dist/feed.xml`）で見る。
+
+### pre-commit
+
+`ruff` / `mypy` は mirrors リポジトリを `rev` 固定せず、`repo: local` + `uv run` で **`uv.lock` が解決したバージョンをそのまま使う**。mirrors 方式だと `rev` と `uv.lock` が独立に動き、hook と `uv run ruff` / `uv run mypy` が別バージョン・別結果を出す（実際に hook 側 ruff v0.9.0 / mypy v1.13.0 に対し lock 側が 0.15.20 / 2.1.0 まで開いていた）。`pre-commit-hooks` だけ `rev` 固定で、Dependabot の `pre-commit` エコシステムが追従する。
 
 ## デプロイ
 
 `.github/workflows/gh-pages.yaml`（`saitama-culture` / `tver-rss` と同一テンプレート）:
 
 - トリガー: `main` への push と毎日 00:00 UTC cron
-- `astral-sh/setup-uv` → `actions/setup-python`（`python-version-file: pyproject.toml`）→ `uv sync` → `uv run main.py` → `actions/upload-pages-artifact`（path: `dist`）→ `actions/deploy-pages`
+- `astral-sh/setup-uv` → `actions/setup-python`（`python-version-file: pyproject.toml`）→ `uv sync --locked` → `uv run main.py` → `actions/upload-pages-artifact`（path: `dist`）→ `actions/deploy-pages`
 - `concurrency` を workflow 単位でまとめて、push と cron の競合を防ぐ
+- **`uv sync --locked`**（`ci.yaml` と揃える）。素の `uv sync` はロックのずれを黙って再生成するため、日次ビルドが気付かないまま別バージョンで動きうる
+- `notify-failure` ジョブ: **cron 実行が失敗したときだけ** `ci-failure` ラベルの issue を起票 / コメントする。push 起因の失敗は Actions タブで見えるので対象外
 
 `dist/` 配下は `.gitignore` 済み（ランナー上で生成して直接 Pages にアップ）。git tracked な成果物はない。
 
@@ -87,7 +98,13 @@ uv run pre-commit run --all-files
 
 ## Dependabot
 
-`.github/dependabot.yml` で `github-actions` と `uv` を weekly 更新。`commit-message.prefix` は `ci`。`pip` ecosystem も登録されているが `open-pull-requests-limit: 0` で抑止（uv 経由で済むため重複 PR を避ける）。自動 PR レビュー (`claude.yml`) は置いていない。
+`.github/dependabot.yml` で `github-actions` / `uv` / `pre-commit` を weekly 更新。`commit-message.prefix` は全部 `ci`。`pip` ecosystem も登録されているが `open-pull-requests-limit: 0` で抑止（uv 経由で済むため重複 PR を避ける）。自動 PR レビュー (`claude.yml`) は置いていない。
+
+3 つとも `groups` で **1 PR にまとめている**。個別 PR だと `uv.lock` を奪い合いながら滞留する（実際に 8 本溜めたことがある）。
+
+`dependabot-auto-merge.yaml` が non-major 更新に auto-merge を立てる。major を含む PR は手動レビューに残る。`pull_request_target` で動くため **PR のコードを checkout / 実行してはいけない**（write 権限つきトークンを PR 側の任意コードに渡すことになる）。検証は read-only トークンで動く `ci.yaml` の責務。
+
+auto-merge はリポジトリ設定に依存する: `allow_auto_merge: true` と、`main` の branch protection で **required status check `check`**（= `ci.yaml` のジョブ名）が必要。これが無いと `gh pr merge --auto` が失敗し、フォールバックの素マージが ci 完了前に走ってしまう。
 
 ## コミット慣例
 
@@ -100,5 +117,5 @@ uv run pre-commit run --all-files
 - 同じ `<li>` 内に `<a>` が 2 つ（タイトル用とサムネ用、両方とも記事詳細を指す）。`<h2 class="newslist-1-tt">` 配下の方を title/href の出処にする
 - 日付は **`YYYY/MM/DD` のみ** で時刻情報なし。JST 0:00 とみなして UTC に変換している（`parse_date` 内）。同一日内の更新順は反映されない仕様
 - `response.encoding` が空のまま入ってくることがあるため、`apparent_encoding` でフォールバックしてから `.text` を読む（`fetch_html`）。これを抜くと文字化けの可能性
-- サイトに公式 RSS は無いため、HTML 構造が変わると無音で壊れる。`pc-only` クラス / `newslist-1-grid` クラスが変わったら全件 0 件になる — モニタリングは「`dist/feed.xml` のアイテム数 > 0」程度で十分
+- サイトに公式 RSS は無いため、HTML 構造が変わると壊れる。`pc-only` クラス / `newslist-1-grid` クラスが変わったら全件 0 件になる。**0 件なら `main()` が `RuntimeError` で落ちる**ので、無音ではなく cron 失敗 → `notify-failure` の issue で気付ける。この挙動を消すと空フィードが既存 `feed.xml` を上書きし、購読側の記事が全部消える
 - ページネーションは `?page=N` で 144 ページまでだが、現状 page=1 のみ取得。週次の取りこぼし懸念があれば 2〜3 ページに増やす（その場合は per-page で `try/except` を分ける）

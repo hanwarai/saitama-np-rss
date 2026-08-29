@@ -148,8 +148,15 @@ def build_feed(items: list[dict[str, Any]]) -> AtomFeedWithMedia:
 
 
 def main() -> None:
+    items = parse_items(fetch_html())
+    # サイトに公式 RSS が無く HTML 構造の変更で無音で 0 件になるため、ここで落とす。
+    # 空フィードを書くと gh-pages が既存の feed.xml を空で上書きし、購読側の記事が消える。
+    if not items:
+        raise RuntimeError(
+            f"記事が 0 件 — LIST_SELECTOR ({LIST_SELECTOR!r}) が上流の HTML 変更で外れた可能性"
+        )
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    feed = build_feed(parse_items(fetch_html()))
+    feed = build_feed(items)
     with OUTPUT_PATH.open("w", encoding="utf-8") as fp:
         feed.write(fp, "utf-8")
     print(f"wrote {OUTPUT_PATH} ({OUTPUT_PATH.stat().st_size} bytes, {len(feed.items)} items)")

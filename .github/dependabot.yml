@@ -7,6 +7,12 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    # 1 本にまとめる。個別 PR だと uv.lock / gh-pages.yaml で衝突しながら
+    # 何本も溜まるため (実際に 8 本滞留したことがある)。
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "uv"
     directory: "/"
@@ -14,7 +20,25 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    groups:
+      python-packages:
+        patterns:
+          - "*"
 
+  # .pre-commit-config.yaml の remote repo (pre-commit-hooks) の rev を追従させる。
+  # ruff / mypy は local hook で uv.lock のバージョンを直接使うため、ここでは動かない。
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      pre-commit:
+        patterns:
+          - "*"
+
+  # uv エコシステムで更新するため pip 側の PR は抑止する (重複 PR 回避)。
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
