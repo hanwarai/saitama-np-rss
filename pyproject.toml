@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Atom feed generator for saitama-np.co.jp まちの話題 (さいたま)"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "requests>=2.32",
-    "feedgenerator>=2.1",
+    "requests>=2.34.2",
+    "feedgenerator>=2.2.1",
     "beautifulsoup4>=4.15.0",
     "lxml>=6.1.1",
 ]
@@ -13,10 +13,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.15.20",
-    "mypy>=1.13",
+    "mypy>=2.1.0",
     "pytest>=9.1.1",
-    "pytest-cov>=6",
-    "pre-commit>=4",
+    "pytest-cov>=7.1.0",
+    "pre-commit>=4.6.0",
     "types-requests",
     "types-beautifulsoup4",
 ]

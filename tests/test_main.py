@@ -253,6 +253,22 @@ def test_main_writes_feed_xml(
     assert "195384" in body
 
 
+def test_main_raises_when_no_items(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # セレクタが上流の HTML 変更で外れると parse_items が 0 件を返す。
+    # 空フィードを書いて deploy すると購読側の記事が全部消えるため、書き込む前に落とす。
+    output = tmp_path / "dist" / "feed.xml"
+    monkeypatch.setattr(main, "OUTPUT_PATH", output)
+    monkeypatch.setattr(main, "fetch_html", lambda: "<html><body></body></html>")
+
+    with pytest.raises(RuntimeError, match="0 件"):
+        main.main()
+
+    assert not output.exists()
+
+
 def test_atom_feed_with_media_skips_thumbnail_when_absent() -> None:
     # media_thumbnail を含まないアイテムは <media:thumbnail> を吐かない
     feed = main.AtomFeedWithMedia(
