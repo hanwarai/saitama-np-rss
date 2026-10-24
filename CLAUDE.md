@@ -102,7 +102,7 @@ lint / format / mypy / pytest は **`ci.yaml` が PR と `main` push で回す**
 
 3 つとも `groups` で **1 PR にまとめている**。個別 PR だと `uv.lock` を奪い合いながら滞留する（実際に 8 本溜めたことがある）。
 
-`dependabot-auto-merge.yaml` が non-major 更新に auto-merge を立てる。major を含む PR は手動レビューに残る。`pull_request_target` で動くため **PR のコードを checkout / 実行してはいけない**（write 権限つきトークンを PR 側の任意コードに渡すことになる）。検証は read-only トークンで動く `ci.yaml` の責務。
+`dependabot-auto-merge.yaml` が non-major 更新に auto-merge を立てる。major を含む PR は手動レビューに残る（例外は `certifi` / `tzdata`。日付バージョニングで年をまたぐ更新が major に分類されるため、`dependency-names` が完全一致なら通す）。`pull_request_target` で動くため **PR のコードを checkout / 実行してはいけない**（write 権限つきトークンを PR 側の任意コードに渡すことになる）。検証は read-only トークンで動く `ci.yaml` の責務。
 
 auto-merge はリポジトリ設定に依存する: `allow_auto_merge: true` と、`main` の branch protection で **required status check `check`**（= `ci.yaml` のジョブ名）が必要。これが無いと `gh pr merge --auto` が失敗し、フォールバックの素マージが ci 完了前に走ってしまう。
 
